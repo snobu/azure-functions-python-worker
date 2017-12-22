@@ -15,6 +15,28 @@ import grpc
 from gen import FunctionRpc_pb2
 from gen import FunctionRpc_pb2_grpc
 
+class Iterator9000(object):
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._responses_so_far = []
+        send_start_stream()
+
+    def __iter__(self):
+        return self
+
+    def _next(self):
+        # some logic that depends upon what responses have been seen
+        # before returning the next request message
+        return worker_init_response
+
+    def __next__(self):
+        return self._next()
+
+    def add_response(self, response):
+        with self._lock:
+            self._responses.append(response)
+
 
 def read_cmdline_args():
     parser = argparse.ArgumentParser()
@@ -34,52 +56,6 @@ def read_cmdline_args():
 
     return args
 
-#-----------------------------------
-#def run():
-    # args = read_cmdline_args()
-    # conn_str = args.host + ':' + str(args.port)
-    # channel = grpc.insecure_channel(conn_str)
-    # try:
-    #     # Our host could be in a different castle,
-    #     # also cloud ravens are slow and raven SLA is poor,
-    #     # so let's wait for some seconds
-    #     grpc.channel_ready_future(channel).result(timeout=5)
-    # except grpc.FutureTimeoutError:
-    #     sys.exit('[PyWORKER] Error connecting to server')
-    # else:
-    #     stub = FunctionRpc_pb2_grpc.FunctionRpcStub(channel)
-    #     print('[PyWORKER] Connected to gRPC server.')
-
-    # # -- rock solid so far ^
-
-    # def stream():
-    #     yield FunctionRpc_pb2.StreamingMessage(
-    #         request_id = args.requestId,
-    #         start_stream = FunctionRpc_pb2.StartStream(worker_id = args.workerId)
-    #     )
-
-    # def handle_worker_init_request():
-    #     yield FunctionRpc_pb2.StreamingMessage(
-    #         request_id = args.requestId,
-    #         worker_init_response = FunctionRpc_pb2.WorkerInitResponse(result = FunctionRpc_pb2.StatusResult(status = 1))
-    #     )
-
-    # msg_stream = stub.EventStream(stream())
-
-    # def read_incoming():
-    #     rpc_msg = next(msg_stream)
-    #     print(f'[PyWORKER] received: {rpc_msg}')
-    #     if rpc_msg.worker_init_request:
-    #         print('-----------GOT INIT REQ-----------')
-    #         stub.EventStream(handle_worker_init_request())
-
-    # thread = threading.Thread(target=read_incoming)
-    # thread.daemon = True
-    # thread.start()
-
-    # while 1:
-    #     time.sleep(1)
-#----------------
 
 args = read_cmdline_args()
 
@@ -93,12 +69,6 @@ worker_init_response = FunctionRpc_pb2.StreamingMessage(
         worker_init_response = FunctionRpc_pb2.WorkerInitResponse(result = FunctionRpc_pb2.StatusResult(status = 1))
 )
 
-def SomeIterator():
-    yield start_stream_msg
-    time.sleep(1)
-    yield worker_init_response
-    while 1:
-        time.sleep(1)
 
 def run():
     conn_str = args.host + ':' + str(args.port)
@@ -113,17 +83,16 @@ def run():
     else:
         stub = FunctionRpc_pb2_grpc.FunctionRpcStub(channel)
         print('[PyWORKER] Connected to gRPC server.')
-        send_message(stub)
-
-def send_message(stub):
-    #yield start_stream_msg
-    responses = stub.EventStream(SomeIterator())
+    
+    req_iterator = Iterator9000()
+    responses = stub.EventStream(req_iterator)
     for response in responses:
-        print('[PyWORKER] host_chat - GOT MESSAGE')
         print(f'[PyWORKER] Received message: {response}')
-        if response.worker_init_request:
-            print(f'Got worker_init_request')
-            yield worker_init_response
+        req_iterator.add_response(response)
+
+
+def send_start_stream():
+    yield start_stream_msg # should we yield here or return?? Not even Bitcoin Jesus knows.
 
 
 if __name__ == '__main__':
